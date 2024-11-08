@@ -5,14 +5,21 @@ import os
 import sys
 import xml.etree.ElementTree as ET
 
+import cv2
 import numpy as np
 import pandas as pd
 import pygmt
 
+# タイルのMIN,MAXを設定
 global Z_MAX
 global Z_MIN
 Z_MAX = 15
 Z_MIN = 6
+
+# 無効値タイルの設定
+global ARR_INV
+ARR_INV = np.zeros((256, 256, 3))
+ARR_INV[:] = [0,0,128]
 
 def main(args):
     input, output, tiles_path = get_paths(args)
@@ -35,12 +42,77 @@ def main(args):
     return
 
 def csv2tiles(csv_path_lists, tiles_path):
-    tiles_path_dicts = {}
-    tiles_path_dicts[Z_MAX] = make_basetiles(csv_path_lists, tiles_path)
+    xy_dict_lists = make_basetiles(csv_path_lists, tiles_path)
+    make_downlevel_tiles(xy_dict_lists, tiles_path, Z_MAX)
+
+def make_downlevel_tiles(xy_dict_lists, tiles_path, z):
+    xy_lists = [{"x":xy_dict["x"]//2, "y":xy_dict["y"]//2} for xy_dict in xy_dict_lists]
+    df = pd.DataFrame(xy_lists)
+    df.drop_duplicates(inplace=True)
+    xy_lists = df.to_dict(orient="records")
+
+    new_xy_lists = [make_downlevel(tiles_path, xy, z) for xy in xy_lists]
+    z = z - 1
+
+def make_downlevel(tiles_path, xy, z):
+    x = xy["x"]
+    y = xy["y"]
+    if not os.path.isfile(f"{tiles_path}/{z}/{x*2}/{y*2}.png"):
+        img_l_t = ARR_INV
+    else:
+        img_l_t = cv2.imread(f"{tiles_path}/{z}/{x*2}/{y*2}.png")
+    if not os.path.isfile(f"{tiles_path}/{z}/{x*2+1}/{y*2}.png"):
+        img_r_t = ARR_INV
+    else:
+        img_r_t = cv2.imread(f"{tiles_path}/{z}/{x*2+1}/{y*2}.png")
+    if not os.path.isfile(f"{tiles_path}/{z}/{x*2}/{y*2+1}.png"):
+        img_l_b = ARR_INV
+    else:
+        img_l_b = cv2.imread(f"{tiles_path}/{z}/{x*2}/{y*2+1}.png")
+    if not os.path.isfile(f"{tiles_path}/{z}/{x*2+1}/{y*2+1}.png"):
+        img_r_b = ARR_INV
+    else:
+        img_r_b = cv2.imread(f"{tiles_path}/{z}/{x*2+1}/{y*2+1}.png")
+
+    merge_img = np.vstack([np.hstack([img_l_t,img_r_t]),np.hstack([img_l_b,img_r_b])])
+    new_img = resize(merge_img)
+
+def resize(merge_img):
+    
 
 def make_basetiles(csv_path_lists, tiles_path):
     grd, tile_corner = csv2grd(csv_path_lists)
     arr = grd2arr(grd)
+
+    # タイルの枚数をカウント
+    x_num = tile_corner[1] - tile_corner[0]
+    y_num = - (tile_corner[3] - tile_corner[2])
+
+    # 配列をタイル単位に分割
+    x_split = np.split(arr, x_num, 1)
+
+    xy_lists = itertools.product(range(tile_corner[0], tile_corner[1]),range(tile_corner[3], tile_corner[2]))
+    tiles_lists = []
+    tiles_lists_append = tiles_lists.append
+    for x, y in xy_lists:
+        xy_split = np.split(x_split[x-tile_corner[0]], y_num, 0)
+        is_tile = arr2png(xy_split[y-tile_corner[3]], tiles_path, Z_MAX, x, y)
+
+        if is_tile:
+            tiles_lists_append({"x":x, "y":y})
+
+    return tiles_lists
+
+def arr2png(arr, tiles_path, z, x, y):
+    if np.allclose(arr, ARR_INV):
+        return False
+    
+    tiles_folder = f"{tiles_path}/{z}/{x}"
+    tiles_file = f"{tiles_folder}/{y}.png"
+    os.makedirs(tiles_folder, exist_ok=True)
+    cv2.imwrite(tiles_file, arr)
+
+    return True
 
 def grd2arr(grd):
     # 標高タイル用に値を形成
@@ -61,7 +133,7 @@ def grd2arr(grd):
     mask = np.where(mask==True, 128, 0)
     arr_r = arr_r - mask
     arr_bgr = np.dstack([arr_b, arr_g, arr_r])
-    
+
     # 上下逆転しているので反転
     arr_bgr_flip = np.flipud(arr_bgr)
 
@@ -105,6 +177,7 @@ def csv2grd(csv_path_lists):
 
     return grd, tile_corner
 
+# gmtのパラメータ(region)を設定
 def get_gmt_range(deg_corner, resolutions):
     x_min = deg_corner[0] + resolutions[0]/2
     x_max = deg_corner[1] - resolutions[0]/2
@@ -113,6 +186,7 @@ def get_gmt_range(deg_corner, resolutions):
 
     return [x_min,x_max,y_min,y_max]
 
+# gmtのパラメータ(spacing)を設定
 def get_gmt_resolution(deg_corner, pix_corner):
     x_resolution = (deg_corner[1] - deg_corner[0]) / (pix_corner[1] - pix_corner[0])
     y_resolution = - (deg_corner[3] - deg_corner[2]) / (pix_corner[3] - deg_corner[2])
