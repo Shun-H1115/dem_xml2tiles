@@ -45,6 +45,8 @@ def csv2tiles(csv_path_lists, tiles_path):
     xy_dict_lists = make_basetiles(csv_path_lists, tiles_path)
     make_downlevel_tiles(xy_dict_lists, tiles_path, Z_MAX)
 
+    return 
+
 def make_downlevel_tiles(xy_dict_lists, tiles_path, z):
     xy_lists = [{"x":xy_dict["x"]//2, "y":xy_dict["y"]//2} for xy_dict in xy_dict_lists]
     df = pd.DataFrame(xy_lists)
@@ -53,6 +55,14 @@ def make_downlevel_tiles(xy_dict_lists, tiles_path, z):
 
     new_xy_lists = [make_downlevel(tiles_path, xy, z) for xy in xy_lists]
     z = z - 1
+    if z == Z_MIN:
+        return 
+    else:
+        xy_df = pd.DataFrame(new_xy_lists)
+        xy_df.drop_duplicates(inplace=True)
+        new_xy_lists = df.to_dict(orient="records")
+
+        return make_downlevel_tiles(new_xy_lists, tiles_path, z)
 
 def make_downlevel(tiles_path, xy, z):
     x = xy["x"]
@@ -76,9 +86,55 @@ def make_downlevel(tiles_path, xy, z):
 
     merge_img = np.vstack([np.hstack([img_l_t,img_r_t]),np.hstack([img_l_b,img_r_b])])
     new_img = resize(merge_img)
+    
+    z -= 1
+    is_img = arr2png(new_img, tiles_path, z, x, y)
+    if is_img:
+        return {"x":int(x), "y":int(y)}
+    else:
+        return {}
 
 def resize(merge_img):
-    
+    # 無効値[0,0,128]をマスクに設定
+    mask = np.all(merge_img[:,:,:]==[0,0,128], axis=-1)
+    # BGR成分に分解
+    arr_b = merge_img[:,:,0]
+    arr_g = merge_img[:,:,1]
+    arr_r = merge_img[:,:,2]
+    # 水深値に戻す
+    arr_x = arr_r * math.pow(2, 16) + arr_g * math.pow(2, 8) + arr_b
+    # 分解能 u = 0.01
+    u = 0.01
+    arr_h = np.where(arr_x > math.pow(2, 23), (arr_x - math.pow(2, 24)) * u, arr_x * u)
+    arr_h = np.where(mask==True, np.nan, arr_h)
+
+    # サイズをH/2,W/2に変換
+    arr_h_resize = rebin_nan(arr_h)
+    # 無効値を2^23で埋める
+    arr_h_fillna = np.nan_to_num(arr_h_resize / u, nan=math.pow(2, 23))
+    # 画像出力するため、整数値に変換
+    arr_h_int = arr_h_fillna.astype(int)
+    arr_r, arr_g, arr_b = [arr_h_int] * 3
+
+    # ビット演算
+    arr_r = np.right_shift(arr_r, 16)
+    arr_r = np.bitwise_and(arr_r, 0xff)
+    arr_g = np.right_shift(arr_g, 8)
+    arr_g = np.bitwise_and(arr_g, 0xff)
+    arr_b = np.bitwise_and(arr_b, 0xff)
+
+    return np.dstack([arr_b, arr_g, arr_r])
+
+def rebin_nan(arr):
+    # 二次元配列のサイズをH/2,W/2に変換
+    shape = [n // 2 for n in arr.shape]
+    new_arr = np.empty((shape[0], shape[1]))
+    for i in range(shape[0]):
+        for j in range(shape[1]):
+            arr_list = np.array([arr[i*2, j*2],arr[i*2+1, j*2],arr[i*2, j*2+1],arr[i*2+1, j*2+1]])
+            new_arr[i,j] = np.nanmean(arr_list)
+
+    return new_arr
 
 def make_basetiles(csv_path_lists, tiles_path):
     grd, tile_corner = csv2grd(csv_path_lists)
