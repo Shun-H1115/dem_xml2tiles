@@ -42,55 +42,69 @@ def main(args):
     return
 
 def csv2tiles(csv_path_lists, tiles_path):
-    xy_dict_lists = make_basetiles(csv_path_lists, tiles_path)
-    make_downlevel_tiles(xy_dict_lists, tiles_path, Z_MAX)
+    xyz_dicts = make_basetiles(csv_path_lists, tiles_path)
+    make_downlevel_tiles(xyz_dicts, tiles_path)
+    make_uplevel_tiles(xyz_dicts, tiles_path)
 
-    return 
+    return
 
-def make_downlevel_tiles(xy_dict_lists, tiles_path, z):
-    xy_lists = [{"x":xy_dict["x"]//2, "y":xy_dict["y"]//2} for xy_dict in xy_dict_lists]
-    df = pd.DataFrame(xy_lists)
-    df.drop_duplicates(inplace=True)
-    xy_lists = df.to_dict(orient="records")
+def make_uplevel_tiles(xyz_dicts, tiles_path):
+    new_xyz_lists = [make_uplevel(tiles_path, xyz) for xyz in xyz_dicts]
 
-    new_xy_lists = [make_downlevel(tiles_path, xy, z) for xy in xy_lists]
-    z = z - 1
+def make_uplevel(tiles_path, xyz):
+    x = xyz["x"]
+    y = xyz["y"]
+    z = xyz["z"]
+    basetile_file = f"{tiles_path}/{z}/{x}/{y}.png"
+    if not os.path.isfile(basetile_file):
+        return {}
+    
+    img = cv2.imread(basetile_file)
+    H, W, C = img.shape
+    img_exp = np.empty((H*2, W*2, C))
+
+def make_downlevel_tiles(xyz_dicts, tiles_path):
+    new_xyz_dicts = [{"x":int(xyz_dict["x"]//2), "y":int(xyz_dict["y"]//2), "z":int(xyz_dict["z"]-1)} for xyz_dict in xyz_dicts]
+    df = pd.DataFrame(new_xyz_dicts).drop_duplicates()
+    new_xyz_dicts = df.to_dict(orient="records")
+
+    created_xyz_lists = [make_downlevel(tiles_path, xyz) for xyz in new_xyz_dicts]
+    z = created_xyz_lists[0]["z"]
     if z == Z_MIN:
         return 
     else:
-        xy_df = pd.DataFrame(new_xy_lists)
-        xy_df.drop_duplicates(inplace=True)
-        new_xy_lists = df.to_dict(orient="records")
+        xy_df = pd.DataFrame(created_xyz_lists).dropna().drop_duplicates()
+        created_xyz_lists = xy_df.to_dict(orient="records")
 
-        return make_downlevel_tiles(new_xy_lists, tiles_path, z)
+        return make_downlevel_tiles(created_xyz_lists, tiles_path)
 
-def make_downlevel(tiles_path, xy, z):
-    x = xy["x"]
-    y = xy["y"]
-    if not os.path.isfile(f"{tiles_path}/{z}/{x*2}/{y*2}.png"):
+def make_downlevel(tiles_path, xyz):
+    x = xyz["x"]
+    y = xyz["y"]
+    z = xyz["z"]
+    if not os.path.isfile(f"{tiles_path}/{z+1}/{x*2}/{y*2}.png"):
         img_l_t = ARR_INV
     else:
-        img_l_t = cv2.imread(f"{tiles_path}/{z}/{x*2}/{y*2}.png")
-    if not os.path.isfile(f"{tiles_path}/{z}/{x*2+1}/{y*2}.png"):
+        img_l_t = cv2.imread(f"{tiles_path}/{z+1}/{x*2}/{y*2}.png")
+    if not os.path.isfile(f"{tiles_path}/{z+1}/{x*2+1}/{y*2}.png"):
         img_r_t = ARR_INV
     else:
-        img_r_t = cv2.imread(f"{tiles_path}/{z}/{x*2+1}/{y*2}.png")
-    if not os.path.isfile(f"{tiles_path}/{z}/{x*2}/{y*2+1}.png"):
+        img_r_t = cv2.imread(f"{tiles_path}/{z+1}/{x*2+1}/{y*2}.png")
+    if not os.path.isfile(f"{tiles_path}/{z+1}/{x*2}/{y*2+1}.png"):
         img_l_b = ARR_INV
     else:
-        img_l_b = cv2.imread(f"{tiles_path}/{z}/{x*2}/{y*2+1}.png")
-    if not os.path.isfile(f"{tiles_path}/{z}/{x*2+1}/{y*2+1}.png"):
+        img_l_b = cv2.imread(f"{tiles_path}/{z+1}/{x*2}/{y*2+1}.png")
+    if not os.path.isfile(f"{tiles_path}/{z+1}/{x*2+1}/{y*2+1}.png"):
         img_r_b = ARR_INV
     else:
-        img_r_b = cv2.imread(f"{tiles_path}/{z}/{x*2+1}/{y*2+1}.png")
+        img_r_b = cv2.imread(f"{tiles_path}/{z+1}/{x*2+1}/{y*2+1}.png")
 
     merge_img = np.vstack([np.hstack([img_l_t,img_r_t]),np.hstack([img_l_b,img_r_b])])
     new_img = resize(merge_img)
     
-    z -= 1
     is_img = arr2png(new_img, tiles_path, z, x, y)
     if is_img:
-        return {"x":int(x), "y":int(y)}
+        return xyz
     else:
         return {}
 
@@ -144,31 +158,39 @@ def make_basetiles(csv_path_lists, tiles_path):
     x_num = tile_corner[1] - tile_corner[0]
     y_num = - (tile_corner[3] - tile_corner[2])
 
-    # 配列をタイル単位に分割
-    x_split = np.split(arr, x_num, 1)
-
     xy_lists = itertools.product(range(tile_corner[0], tile_corner[1]),range(tile_corner[3], tile_corner[2]))
-    tiles_lists = []
-    tiles_lists_append = tiles_lists.append
-    for x, y in xy_lists:
-        xy_split = np.split(x_split[x-tile_corner[0]], y_num, 0)
-        is_tile = arr2png(xy_split[y-tile_corner[3]], tiles_path, Z_MAX, x, y)
+    tiles_dicts = [make_basetile(arr, tile_corner, x_num, y_num, x, y, tiles_path) for x, y in xy_lists]
+    tiles_df = pd.DataFrame(tiles_dicts).dropna().drop_duplicates()
 
-        if is_tile:
-            tiles_lists_append({"x":x, "y":y})
+    return tiles_df.to_dict(orient="records")
 
-    return tiles_lists
+def make_basetile(arr, tile_corner, x_num, y_num, x, y, tiles_path):
+    x_split = np.split(arr, x_num, 1)
+    xy_split = np.split(x_split[x - tile_corner[0]], y_num, 0)
+    tile_arr = xy_split[y - tile_corner[3]]
+    if np.allclose(tile_arr, ARR_INV):
+        return {}
+    
+    done_save_png = arr2png(arr, tiles_path, Z_MAX, x, y)
+    if done_save_png:
+        return {"x": x, "y": y, "z": Z_MAX}
+    
+    else:
+        raise ("タイル画像の保存に失敗しました")
 
 def arr2png(arr, tiles_path, z, x, y):
-    if np.allclose(arr, ARR_INV):
-        return False
-    
-    tiles_folder = f"{tiles_path}/{z}/{x}"
-    tiles_file = f"{tiles_folder}/{y}.png"
-    os.makedirs(tiles_folder, exist_ok=True)
-    cv2.imwrite(tiles_file, arr)
+    try:
+        tiles_folder = f"{tiles_path}/{z}/{x}"
+        tiles_file = f"{tiles_folder}/{y}.png"
+        os.makedirs(tiles_folder, exist_ok=True)
+        cv2.imwrite(tiles_file, arr)
 
-    return True
+        return True
+    
+    except Exception as e:
+        print(f"タイル画像の出力に失敗しました:{e}")
+
+        return False
 
 def grd2arr(grd):
     # 標高タイル用に値を形成
