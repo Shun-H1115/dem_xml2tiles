@@ -84,7 +84,6 @@ def make_grd(range, range_num, dem_lists, output):
     df = pd.DataFrame(xyz_lists)
     df["x"], df["y"] = df["y"], df["x"]
     df.to_csv(output, index=None)
-    # grd = pygmt.xyz2grd(data=df, region=region, spacing=(x_resolution,y_resolution), duplicate="u", header="1", outgrid=path)
 
     return
 

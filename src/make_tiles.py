@@ -3,7 +3,6 @@ import glob
 import math
 import os
 import sys
-import xml.etree.ElementTree as ET
 
 import cv2
 import numpy as np
