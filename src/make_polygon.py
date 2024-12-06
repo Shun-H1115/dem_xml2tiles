@@ -1,4 +1,5 @@
 import itertools
+import json
 import math
 import os
 
@@ -72,8 +73,41 @@ class MakePolygon():
         return {"geometry": polygon}
     
 
-    def simplify_geojson(gdf, polygon_file):
-        
+    def simplify_geojson(polygon_file, tolerance=0.0005):
+        with open(polygon_file, "r") as f:
+            data = json.load(f)
+
+        if "features" in data:
+            simplified_features = []
+            for feature in data["features"]:
+                geometry = feature["geometry"]
+                if geometry["type"] == "Polygon":
+                    simplified_exterior = LineString(geometry["coordinates"][0]).simplify(
+                        tolerance, preserve_topology=True
+                    )
+                    simplified_interiors = [LineString(interior).simplify(
+                        tolerance, preserve_topology=True) for interior in geometry["coordinates"][1:]
+                    ]
+                    feature["geometry"]["coordinates"] = [simplified_exterior.coords[:]] + [i.coords[:] for i in simplified_interiors]
+                elif geometry["type"] == "MultiPolygon":
+                    simplified_polygons = []
+                    for polygon in geometry["coordinates"]:
+                        simplified_exterior = LineString(polygon[0]).simplify(
+                            tolerance, preserve_topology=True
+                        )
+                        simplified_interiors = [LineString(interior).simplify(
+                            tolerance, preserve_topology=True) for interior in polygon[1:]
+                        ]
+                        simplified_polygons.append(
+                            [simplified_exterior.coords[:]] + [i.coords[:] for i in simplified_interiors]
+                        )
+                    feature["geometry"]["coordinates"] = simplified_polygons
+                else:
+                    raise ("タイル画像が不適切です")
+            data["features"] = simplified_features
+
+        with open(polygon_file, "w") as f:
+            json.dump(data, f)
 
 
     def make_polygon(self, path_dicts):
@@ -102,4 +136,4 @@ class MakePolygon():
         gdf.to_file(polygon_file, driver="GeoJSON")
         
         # 直線状の頂点を間引く
-        self.simplify_geojson(gdf, polygon_file)
+        self.simplify_geojson(polygon_file)
