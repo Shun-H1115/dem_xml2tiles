@@ -103,7 +103,7 @@ class MakePolygon():
                         )
                     feature["geometry"]["coordinates"] = simplified_polygons
                 else:
-                    raise ("タイル画像が不適切です")
+                    raise Exception("タイル画像が不適切です")
             data["features"] = simplified_features
 
         with open(polygon_file, "w") as f:
@@ -121,7 +121,7 @@ class MakePolygon():
         polygon_file = "{folder}/{y}.png".format(folder=polygon_zx_folder, y=xyz["y"])
 
         if not os.path.isfile(tile_file):
-            raise (f"{tile_file}タイルが存在しません")
+            raise Exception(f"{tile_file}タイルが存在しません")
         img = cv2.imread(tile_file)
 
         # 画像のすべてのピクセルを調べ、無効値でなければピクセル範囲のポリゴン

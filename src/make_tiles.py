@@ -99,7 +99,7 @@ class MakeTiles():
             "z": "sum multiple values"
         }
         if not duplicate in duplicate_dict:
-            raise ("duplicateを正しく設定してください")
+            raise Exception("duplicateを正しく設定してください")
         # 緯度経度をピクセル座標に変換
         pix_corner = self.deg2pix(deg_corner)
         # ピクセル座標をタイル座標に変換
@@ -201,7 +201,7 @@ class ColorTiles(MakeTiles):
             return {"x": x, "y": y, "z": self.z_base}
         
         else:
-            raise ("タイル画像の保存に失敗しました")
+            raise Exception("タイル画像の保存に失敗しました")
 
 
     def make_basetiles(self, df, tiles_folder, duplicate, is_nearest):
@@ -295,7 +295,7 @@ class ColorTiles(MakeTiles):
 
         can_save_img = self.arr2png(new_img, tiles_folder, z, x, y)
         if not can_save_img:
-            raise (f"x{x}, y{y}, z{z}のタイル画像保存に失敗しました")
+            raise Exception(f"x{x}, y{y}, z{z}のタイル画像保存に失敗しました")
         
         return xyz
 
@@ -449,7 +449,7 @@ class HillShadeTiles(MakeTiles):
             return {"x": x, "y": y, "z": self.z_base}
         
         else:
-            raise ("タイル画像の保存に失敗しました")
+            raise Exception("タイル画像の保存に失敗しました")
 
 
     def make_basetiles(self, df, tiles_folder, duplicate, is_nearest):
@@ -531,7 +531,7 @@ class HillShadeTiles(MakeTiles):
 
         can_save_img = self.arr2png(new_img, tiles_folder, z, x, y)
         if not can_save_img:
-            raise (f"x{x}, y{y}, z{z}のタイル画像保存に失敗しました")
+            raise Exception(f"x{x}, y{y}, z{z}のタイル画像保存に失敗しました")
         
         return xyz
 
