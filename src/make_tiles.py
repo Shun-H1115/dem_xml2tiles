@@ -177,6 +177,12 @@ class ColorTiles(MakeTiles):
         try:
             tiles_folder = f"{tiles_folder}/{z}/{x}"
             tiles_file = f"{tiles_folder}/{y}.png"
+
+            # すでにタイルがあるときは重ね合わせる
+            if os.path.isfile(tiles_file):
+                self.overlap_png(arr, tiles_file)
+                return True
+            
             os.makedirs(tiles_folder, exist_ok=True)
             cv2.imwrite(tiles_file, arr)
 
@@ -187,6 +193,17 @@ class ColorTiles(MakeTiles):
 
             return False
 
+
+    # 古いタイルに新しいタイルを重ねる
+    def overlap_png(self, arr, outfile):
+        h, w, _ = arr.shape
+        mask = np.all(arr[:,:,:]==[0,0,128], axis=-1)
+        old_arr = cv2.imread(outfile)
+        old_arr[:] = np.where(mask[:h, :w, np.newaxis]==True, old_arr, arr)
+        cv2.imwrite(outfile, old_arr)
+
+        return
+    
 
     def make_basetile(self, arr, tile_corner, x_num, y_num, x, y, tiles_folder):
         x_split = np.split(arr, x_num, 1)
@@ -423,6 +440,12 @@ class HillShadeTiles(MakeTiles):
         try:
             tiles_folder = f"{tiles_folder}/{z}/{x}"
             tiles_file = f"{tiles_folder}/{y}.png"
+
+            # すでにタイルがあるときは重ね合わせる
+            if os.path.isfile(tiles_file):
+                self.overlap_png(arr, tiles_file)
+                return True
+            
             os.makedirs(tiles_folder, exist_ok=True)
             cv2.imwrite(tiles_file, arr)
 
@@ -432,6 +455,16 @@ class HillShadeTiles(MakeTiles):
             print(f"タイル画像の出力に失敗しました:{e}")
 
             return False
+
+
+    # 古いタイルに新しいタイルを重ねる
+    def overlap_png(self, arr, outfile):
+        h, w, _ = arr.shape
+        old_arr = cv2.imread(outfile, -1)
+        old_arr[:,:,:] = old_arr[:,:,:4] * (1 - arr[:,:,3:]//255) + arr[:,:,:4] * (arr[:,:,3:]//255)
+        cv2.imwrite(outfile, old_arr)
+
+        return
 
 
     def make_basetile(self, arr, tile_corner, x_num, y_num, x, y, tiles_folder):
